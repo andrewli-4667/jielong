@@ -15,4 +15,11 @@ module.exports = {
 
   // CORS 允许的源。演示用 '*'；部署到微信时建议改为你的前端/小程序域名。
   corsOrigin: process.env.CORS_ORIGIN || '*',
+
+  // Supabase（数据库）：两个值来自 Supabase → Project Settings → API
+  supabaseUrl: process.env.SUPABASE_URL || '',
+  supabaseKey: process.env.SUPABASE_KEY || '',
+
+  // 管理员口令：管理操作（建接龙/导名单/改字段/删记录/导出）需要它
+  adminPassword: process.env.ADMIN_PASSWORD || 'admin123',
 };

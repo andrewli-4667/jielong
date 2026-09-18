@@ -2,54 +2,140 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>群接龙 · 演示</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>员工每日业务达成 · 接龙</title>
+  <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">群接龙 <span class="badge">演示</span></div>
-    <nav>
-      <button id="nav-list" class="nav active">接龙列表</button>
-      <button id="nav-create" class="nav">+ 创建</button>
-    </nav>
+    <div class="brand" id="nav-home">📋 业务达成接龙</div>
+    <div class="top-actions">
+      <button id="nav-create" class="nav">＋ 创建接龙</button>
+      <button id="nav-admin" class="nav ghost">管理</button>
+    </div>
   </header>
 
-  <main>
-    <section id="sec-list" class="section active">
-      <input id="search" class="search" placeholder="搜索接龙标题" />
-      <div id="list"></div>
+  <main id="app">
+    <!-- 首页：接龙列表 -->
+    <section id="view-home" class="view">
+      <h2 class="page-title">全部接龙</h2>
+      <div id="chain-list" class="card-list"></div>
+      <p id="home-empty" class="muted" hidden>还没有接龙，点右上角「＋ 创建接龙」。</p>
     </section>
 
-    <section id="sec-create" class="section">
-      <div class="card">
-        <label>标题 *</label>
-        <input id="c-title" class="input" placeholder="例如：周末聚餐报名" />
-        <label>说明</label>
-        <textarea id="c-desc" class="input" placeholder="补充说明（选填）"></textarea>
-        <label>可选项</label>
-        <div id="c-options"></div>
-        <button class="ghost" id="c-add-opt">+ 添加选项</button>
-        <label>自定义字段（选填）</label>
-        <div id="c-fields"></div>
-        <button class="ghost" id="c-add-field">+ 添加字段</button>
-        <label>截止时间（选填）</label>
-        <input id="c-deadline" class="input" type="datetime-local" />
-        <button class="primary" id="c-submit">创建接龙</button>
+    <!-- 详情：员工填报 + 每日看板 -->
+    <section id="view-detail" class="view" hidden>
+      <div class="detail-head">
+        <h2 id="detail-title" class="page-title"></h2>
+        <span id="detail-status" class="badge"></span>
+        <button id="btn-copy" class="nav ghost small">复制接龙链接</button>
       </div>
-    </section>
 
-    <section id="sec-detail" class="section">
-      <div id="detail"></div>
-      <div class="detail-actions">
-        <button class="ghost" id="d-copy">复制链接</button>
-        <button class="ghost" id="d-export">导出 CSV</button>
-        <button class="ghost" id="d-back">返回列表</button>
+      <div class="today-pill" id="today-pill"></div>
+
+      <!-- 员工填报 -->
+      <div class="card">
+        <div class="card-title">① 选择你的名字</div>
+        <select id="employee-select" class="full"></select>
+        <div id="employee-hint" class="muted small"></div>
+      </div>
+
+      <div class="card" id="form-card" hidden>
+        <div class="card-title">
+          ② 填报 <span id="form-date-label"></span> 的数据
+          <span id="form-state" class="badge small"></span>
+        </div>
+        <form id="entry-form"></form>
+        <div class="row gap">
+          <button id="btn-submit" class="primary">提交</button>
+          <span id="submit-msg" class="muted small"></span>
+        </div>
+      </div>
+
+      <!-- 每日看板 -->
+      <div class="card">
+        <div class="card-title">
+          ③ 每日看板
+          <div class="date-nav">
+            <button id="date-prev" class="nav ghost small">‹</button>
+            <input type="date" id="view-date" class="date-input" />
+            <button id="date-next" class="nav ghost small">›</button>
+            <button id="date-today" class="nav ghost small">今天</button>
+          </div>
+        </div>
+        <div id="board" class="board"></div>
       </div>
     </section>
   </main>
 
-  <div id="toast" class="toast"></div>
-  <script src="app.js"></script>
+  <!-- 管理员面板（弹层） -->
+  <div id="admin-modal" class="modal" hidden>
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>管理面板</h3>
+        <button id="admin-close" class="nav ghost small">关闭</button>
+      </div>
+
+      <!-- 口令 -->
+      <div id="admin-login" class="admin-login">
+        <p class="muted small">管理操作需要口令（建接龙 / 名单 / 字段 / 记录 / 导出）。</p>
+        <input type="password" id="admin-pwd" class="full" placeholder="输入管理员口令" />
+        <button id="admin-login-btn" class="primary">进入</button>
+        <span id="admin-login-msg" class="muted small"></span>
+      </div>
+
+      <div id="admin-body" hidden>
+        <div class="tabs">
+          <button class="tab active" data-tab="tab-fields">字段</button>
+          <button class="tab" data-tab="tab-employees">员工名单</button>
+          <button class="tab" data-tab="tab-records">记录</button>
+          <button class="tab" data-tab="tab-misc">设置</button>
+        </div>
+
+        <!-- 字段管理 -->
+        <div id="tab-fields" class="tab-pane">
+          <div class="row gap">
+            <input id="field-label" class="flex1" placeholder="新字段名，如：拜访量" />
+            <select id="field-type"><option value="number">数字</option><option value="text">文本</option></select>
+            <button id="field-add" class="primary small">添加字段</button>
+          </div>
+          <div id="field-list" class="mini-list"></div>
+        </div>
+
+        <!-- 员工名单 -->
+        <div id="tab-employees" class="tab-pane" hidden>
+          <p class="muted small">每行一个名字，可批量粘贴导入（已存在自动去重）。</p>
+          <textarea id="emp-import" class="full" rows="5" placeholder="张三&#10;李四&#10;王五"></textarea>
+          <button id="emp-import-btn" class="primary small">导入名单</button>
+          <div id="emp-list" class="mini-list"></div>
+        </div>
+
+        <!-- 记录管理 -->
+        <div id="tab-records" class="tab-pane" hidden>
+          <p class="muted small">按日期查看/修改/删除某条记录（管理员权限）。</p>
+          <div class="date-nav">
+            <button id="rec-prev" class="nav ghost small">‹</button>
+            <input type="date" id="rec-date" class="date-input" />
+            <button id="rec-next" class="nav ghost small">›</button>
+          </div>
+          <div id="rec-list" class="mini-list"></div>
+        </div>
+
+        <!-- 设置 -->
+        <div id="tab-misc" class="tab-pane" hidden>
+          <div class="row gap">
+            <button id="btn-toggle-status" class="primary small">切换接龙开关</button>
+            <button id="btn-export" class="primary small">导出 CSV（创建日→今天）</button>
+          </div>
+          <p class="muted small" id="export-note">CSV 为明细行：日期,姓名,各字段,接龙时间。</p>
+          <button id="btn-delete-chain" class="danger small">删除此接龙</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="/app.js"></script>
 </body>
 </html>

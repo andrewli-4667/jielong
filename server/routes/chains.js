@@ -1,133 +1,200 @@
-// 接龙相关路由
+// 接龙相关路由（重构：员工每日业务达成 · Supabase 存储）
 const express = require('express');
 const router = express.Router();
-const store = require('../store');
+const repo = require('../repo');
 const config = require('../config');
 
-// 列表（含参与人数）
-router.get('/', (req, res) => {
-  const chains = store.listChains().map(c => ({
-    id: c.id,
-    title: c.title,
-    description: c.description,
-    deadline: c.deadline,
-    createdAt: c.createdAt,
-    participantCount: store.getEntries(c.id).length,
-  }));
-  res.json({ code: 0, data: chains });
-});
-
-// 创建接龙
-router.post('/', (req, res) => {
-  const { title, description, options, fields, deadline, creator } = req.body || {};
-  if (!title || !String(title).trim()) {
-    return res.json({ code: 1, message: '标题不能为空' });
+// 校验管理员口令
+function requireAdmin(req, res) {
+  const pwd = (req.body && req.body.adminPassword) || (req.query && req.query.adminPassword);
+  if (pwd !== config.adminPassword) {
+    res.json({ code: 401, message: '管理员口令错误' });
+    return false;
   }
-  const chain = store.createChain({
-    title: String(title).trim(),
-    description: description ? String(description).trim() : '',
-    options,
-    fields,
-    deadline: deadline || null,
-    creator: creator || '',
-  });
-  const shareUrl = `${req.protocol}://${req.get('host')}/?id=${chain.id}`;
-  res.json({ code: 0, data: { ...chain, shareUrl } });
-});
+  return true;
+}
 
-// 接龙详情（含记录与统计）
-router.get('/:id', (req, res) => {
-  const chain = store.getChain(req.params.id);
-  if (!chain) return res.json({ code: 1, message: '接龙不存在' });
-  const entries = store.getEntries(chain.id);
-  const stats = store.getStats(chain);
-  const closed = !!(chain.deadline && new Date(chain.deadline).getTime() < Date.now());
-  res.json({ code: 0, data: { chain, entries, stats, closed } });
-});
-
-// 加入 / 接龙
-router.post('/:id/entries', (req, res) => {
-  const chain = store.getChain(req.params.id);
-  if (!chain) return res.json({ code: 1, message: '接龙不存在' });
-
-  const { userId, userName, answers } = req.body || {};
-  if (!userId) return res.json({ code: 1, message: '缺少用户标识' });
-  if (!userName || !String(userName).trim()) return res.json({ code: 1, message: '请填写姓名' });
-
-  if (chain.deadline && new Date(chain.deadline).getTime() < Date.now()) {
-    return res.json({ code: 2, message: '接龙已截止' });
-  }
-  if (store.hasEntry(chain.id, userId)) {
-    return res.json({ code: 3, message: '你已经接过龙了' });
-  }
-
-  // 校验选项合法性
-  const ans = answers || {};
-  if (ans.option !== undefined && !chain.options.includes(ans.option)) {
-    return res.json({ code: 1, message: '非法的选项' });
-  }
-
-  const entry = store.addEntry({
-    chainId: chain.id,
-    userId,
-    userName: String(userName).trim(),
-    answers: ans,
-  });
-  res.json({ code: 0, data: entry });
-});
-
-// 导出 CSV（带 UTF-8 BOM，Excel 直接可读）
-router.get('/:id/export', (req, res) => {
-  const chain = store.getChain(req.params.id);
-  if (!chain) return res.json({ code: 1, message: '接龙不存在' });
-  const entries = store.getEntries(chain.id);
-
-  const headers = [
-    '姓名',
-    ...(chain.options || []).map(o => `选项:${o}`),
-    ...(chain.fields || []).map(f => f.label || f.key),
-    '接龙时间',
-  ];
-  const rows = entries.map(e => {
-    const ans = e.answers || {};
-    return [
-      e.userName,
-      ans.option || '',
-      ...(chain.fields || []).map(f => ans[f.key] || ''),
-      e.createdAt,
-    ];
-  });
-
-  const csv = [headers, ...rows]
-    .map(r => r.map(cell => {
-      const s = String(cell == null ? '' : cell);
-      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-    }).join(','))
-    .join('\n');
-
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="chain_${chain.id}.csv"`);
-  res.send('\uFEFF' + csv);
-});
-
-// 小程序登录：code 换 openid。未配置 AppSecret 时返回演示 openid。
-router.post('/login', async (req, res) => {
-  const { code } = req.body || {};
-  if (!code) return res.json({ code: 1, message: '缺少 code' });
-
-  if (!config.wxAppId || !config.wxAppSecret) {
-    return res.json({ code: 0, data: { openid: 'demo_' + code, demo: true } });
-  }
+// 列表
+router.get('/', async (req, res) => {
   try {
-    const url = `https://api.weixin.qq.com/sns/jscode2session?appid=${config.wxAppId}` +
-      `&secret=${config.wxAppSecret}&js_code=${code}&grant_type=authorization_code`;
-    const r = await fetch(url);
-    const json = await r.json();
-    if (json.openid) return res.json({ code: 0, data: { openid: json.openid } });
-    return res.json({ code: 1, message: json.errmsg || '登录失败', wx: json });
+    const chains = await repo.listChains();
+    res.json({ code: 0, data: chains });
+  } catch (e) { res.json({ code: 1, message: e.message }); }
+});
+
+// 创建接龙（管理）
+router.post('/', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { title } = req.body || {};
+  if (!title || !String(title).trim()) return res.json({ code: 1, message: '标题不能为空' });
+  try {
+    const chain = await repo.createChain({ title: String(title).trim() });
+    const shareUrl = `${req.protocol}://${req.get('host')}/?id=${chain.id}`;
+    res.json({ code: 0, data: { ...chain, shareUrl } });
+  } catch (e) { res.json({ code: 1, message: e.message }); }
+});
+
+// 详情（含字段、名单、记录、统计），?date= 指定锚定日期
+router.get('/:id', async (req, res) => {
+  try {
+    const chain = await repo.getChain(req.params.id);
+    if (!chain) return res.json({ code: 1, message: '接龙不存在' });
+    const [fields, employees, entries] = await Promise.all([
+      repo.listFields(chain.id),
+      repo.listEmployees(chain.id),
+      repo.listEntries(chain.id),
+    ]);
+    const today = repo.todayCN();
+    // 已提交今天的人数
+    const submittedToday = entries.filter(e => e.entryDate === today).map(e => e.employeeName);
+    res.json({
+      code: 0,
+      data: {
+        chain, fields, employees, entries,
+        today,
+        submittedToday,
+        createdDate: String(chain.createdAt).slice(0, 10),
+      },
+    });
+  } catch (e) { res.json({ code: 1, message: e.message }); }
+});
+
+// 开关接龙（管理）
+router.patch('/:id/status', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { status } = req.body || {};
+  if (!['open', 'closed'].includes(status)) return res.json({ code: 1, message: '状态非法' });
+  try {
+    const r = await repo.setChainStatus(req.params.id, status);
+    res.json({ code: 0, data: r });
+  } catch (e) { res.json({ code: 1, message: e.message }); }
+});
+
+// ---------- 字段（可增删改） ----------
+router.get('/:id/fields', async (req, res) => {
+  try { res.json({ code: 0, data: await repo.listFields(req.params.id) }); }
+  catch (e) { res.json({ code: 1, message: e.message }); }
+});
+router.post('/:id/fields', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { label, type, required, options } = req.body || {};
+  if (!label || !String(label).trim()) return res.json({ code: 1, message: '字段名不能为空' });
+  try {
+    const f = await repo.addField(req.params.id, {
+      label: String(label).trim(), type: type || 'number',
+      required: required !== false, options: options || null,
+    });
+    res.json({ code: 0, data: f });
+  } catch (e) { res.json({ code: 1, message: e.message }); }
+});
+router.patch('/:id/fields/:fid', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const f = await repo.updateField(req.params.id, req.params.fid, req.body || {});
+    res.json({ code: 0, data: f });
+  } catch (e) { res.json({ code: 1, message: e.message }); }
+});
+router.delete('/:id/fields/:fid', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try { await repo.deleteField(req.params.id, req.params.fid); res.json({ code: 0, data: { ok: true } }); }
+  catch (e) { res.json({ code: 1, message: e.message }); }
+});
+
+// ---------- 员工名单（可增减） ----------
+router.get('/:id/employees', async (req, res) => {
+  try { res.json({ code: 0, data: await repo.listEmployees(req.params.id) }); }
+  catch (e) { res.json({ code: 1, message: e.message }); }
+});
+router.post('/:id/employees', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { names } = req.body || {};
+  if (!Array.isArray(names) || !names.length) return res.json({ code: 1, message: '请传入姓名列表' });
+  const clean = [...new Set(names.map(n => String(n).trim()).filter(Boolean))];
+  if (!clean.length) return res.json({ code: 1, message: '没有有效姓名' });
+  try {
+    const added = await repo.addEmployees(req.params.id, clean);
+    res.json({ code: 0, data: { added, count: added.length } });
   } catch (e) {
-    return res.json({ code: 1, message: '请求微信失败: ' + e.message });
+    if (/duplicate|unique/i.test(e.message)) return res.json({ code: 1, message: '名单中存在重复姓名' });
+    res.json({ code: 1, message: e.message });
   }
+});
+router.patch('/:id/employees/:eid', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const e = await repo.updateEmployee(req.params.id, req.params.eid, req.body || {});
+    res.json({ code: 0, data: e });
+  } catch (e) { res.json({ code: 1, message: e.message }); }
+});
+router.delete('/:id/employees/:eid', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try { await repo.deleteEmployee(req.params.id, req.params.eid); res.json({ code: 0, data: { ok: true } }); }
+  catch (e) { res.json({ code: 1, message: e.message }); }
+});
+
+// ---------- 记录（每人每天一条） ----------
+// 员工提交 / 当天修改（管理员也可替员工提交，用同样的 upsert）
+router.post('/:id/entries', async (req, res) => {
+  const { employeeId, employeeName, entryDate, values } = req.body || {};
+  if (!employeeName || !String(employeeName).trim()) return res.json({ code: 1, message: '请选择员工姓名' });
+  if (!entryDate) return res.json({ code: 1, message: '缺少日期' });
+  if (!values || typeof values !== 'object') return res.json({ code: 1, message: '缺少填报数据' });
+  try {
+    const entry = await repo.upsertEntry(req.params.id, {
+      employeeId: employeeId || null,
+      employeeName: String(employeeName).trim(),
+      entryDate,
+      values,
+    });
+    res.json({ code: 0, data: entry });
+  } catch (e) { res.json({ code: 1, message: e.message }); }
+});
+router.patch('/:id/entries/:eid', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { values } = req.body || {};
+  if (!values || typeof values !== 'object') return res.json({ code: 1, message: '缺少填报数据' });
+  try {
+    const e = await repo.updateEntry(req.params.id, req.params.eid, values);
+    res.json({ code: 0, data: e });
+  } catch (err) { res.json({ code: 1, message: err.message }); }
+});
+router.delete('/:id/entries/:eid', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try { await repo.deleteEntry(req.params.id, req.params.eid); res.json({ code: 0, data: { ok: true } }); }
+  catch (e) { res.json({ code: 1, message: e.message }); }
+});
+
+// 导出 CSV（明细行，范围：创建日 → 今天）【需管理员口令】
+router.get('/:id/export', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const chain = await repo.getChain(req.params.id);
+    if (!chain) return res.json({ code: 1, message: '接龙不存在' });
+    const fields = await repo.listFields(chain.id);
+    const from = String(chain.createdAt).slice(0, 10);
+    const entries = await repo.exportEntries(chain.id, from);
+
+    const headers = ['日期', '姓名', ...fields.map(f => f.label), '接龙时间'];
+    const rows = entries.map(e => {
+      const vals = e.values || {};
+      return [
+        e.entryDate,
+        e.employeeName,
+        ...fields.map(f => (vals[f.id] != null ? vals[f.id] : '') ),
+        (e.createdAt || '').replace('T', ' ').slice(0, 19),
+      ];
+    });
+    const csv = [headers, ...rows]
+      .map(r => r.map(cell => {
+        const s = String(cell == null ? '' : cell);
+        return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      }).join(','))
+      .join('\n');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="chain_${chain.id}.csv"`);
+    res.send('\uFEFF' + csv);
+  } catch (e) { res.json({ code: 1, message: e.message }); }
 });
 
 module.exports = router;

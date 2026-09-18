@@ -16,11 +16,26 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true }));
+app.get('/api/health', (req, res) => {
+  const dbOk = !!(config.supabaseUrl && config.supabaseKey);
+  res.json({ ok: true, db: dbOk ? 'supabase' : 'not-configured' });
+});
+
+// 管理员口令校验（前端登录管理面板用）
+app.post('/api/admin/verify', (req, res) => {
+  const pwd = (req.body && req.body.adminPassword) || '';
+  if (pwd === config.adminPassword) return res.json({ code: 0 });
+  res.json({ code: 401, message: '口令错误' });
+});
 app.use('/api/chains', chainsRouter);
 
 // 静态演示页（沙箱预览 / 无 AppID 时的轻量入口）
 app.use(express.static(path.join(__dirname, 'public')));
+
+// 源码下载（部署到 GitHub / Render 用）
+app.get('/download', (req, res) => {
+  res.download(path.join(__dirname, '..', 'jielong-deploy.zip'));
+});
 
 // 兜底错误处理
 app.use((err, req, res, next) => {
