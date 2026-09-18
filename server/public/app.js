@@ -2,7 +2,13 @@
 const el = (id) => document.getElementById(id);
 function toast(msg) {
   const t = el('toast'); t.textContent = msg; t.hidden = false;
-  clearTimeout(toast._t); toast._t = setTimeout(() => (t.hidden = true), 2200);
+  clearTimeout(toast._t); toast._t = setTimeout(() => (t.hidden = true), 2600);
+}
+// 管理面板里的行内文字反馈
+function setMsg(id, text, isErr) {
+  const e = el(id); if (!e) return;
+  e.textContent = text || '';
+  e.className = 'msg' + (isErr ? ' err' : (text ? ' ok' : ''));
 }
 function fmtDate(d) { return d; }
 
@@ -223,15 +229,28 @@ function openAdmin() {
   else { el('admin-login').hidden = false; el('admin-body').hidden = true; }
 }
 el('admin-close').onclick = () => { el('admin-modal').hidden = true; };
+// 点弹层灰色空白处也能关闭
+el('admin-modal').onclick = (e) => { if (e.target === el('admin-modal')) el('admin-modal').hidden = true; };
 el('admin-login-btn').onclick = () => {
   const pwd = el('admin-pwd').value;
   if (!pwd) { el('admin-login-msg').textContent = '请输入口令'; return; }
+  el('admin-login-msg').textContent = '校验中…';
   api('/api/admin/verify', { method: 'POST', body: JSON.stringify({ adminPassword: pwd }) }).then(r => {
     if (r.code !== 0) { el('admin-login-msg').textContent = r.message || '口令错误'; return; }
     state.adminPwd = pwd; sessionStorage.setItem('adminPwd', pwd);
+    el('admin-login-msg').textContent = '';
     el('admin-login').hidden = true; el('admin-body').hidden = false; refreshAdmin();
   });
 };
+
+// 管理操作都针对“当前打开的接龙”。没打开时给出明确提示，而不是静默报错。
+function needChain() {
+  if (!state.chain) {
+    toast('请先进入一个接龙再操作：关闭本面板 → 点列表里的接龙，或点右上角「＋ 创建接龙」');
+    return false;
+  }
+  return true;
+}
 
 // tabs
 document.querySelectorAll('.tab').forEach(t => {
@@ -244,13 +263,21 @@ document.querySelectorAll('.tab').forEach(t => {
 
 // 字段
 el('field-add').onclick = async () => {
+  if (!needChain()) return;
   const label = el('field-label').value.trim();
-  if (!label) { toast('请输入字段名'); return; }
-  const r = await api('/api/chains/' + state.chain.id + '/fields', {
-    method: 'POST', body: JSON.stringify({ label, type: el('field-type').value, adminPassword: state.adminPwd }),
-  });
-  if (r.code === 0) { el('field-label').value = ''; toast('字段已添加'); await reloadDetail(); renderFields(); }
-  else toast(r.message || '失败');
+  if (!label) { setMsg('field-msg', '请输入字段名', true); return; }
+  setMsg('field-msg', '添加中…', false);
+  try {
+    const r = await api('/api/chains/' + state.chain.id + '/fields', {
+      method: 'POST', body: JSON.stringify({ label, type: el('field-type').value, adminPassword: state.adminPwd }),
+    });
+    if (r.code === 0) {
+      el('field-label').value = '';
+      await reloadDetail(); renderFields();
+      setMsg('field-msg', '✅ 已添加「' + label + '」，共 ' + state.fields.length + ' 个字段', false);
+      toast('字段已添加');
+    } else { setMsg('field-msg', '❌ ' + (r.message || '添加失败'), true); }
+  } catch (e) { setMsg('field-msg', '❌ 添加失败：' + e.message, true); }
 };
 function renderFields() {
   const box = el('field-list'); box.innerHTML = '';
@@ -275,13 +302,21 @@ function renderFields() {
 
 // 员工
 el('emp-import-btn').onclick = async () => {
+  if (!needChain()) return;
   const names = el('emp-import').value.split(/[\n,，]/).map(s => s.trim()).filter(Boolean);
-  if (!names.length) { toast('请粘贴姓名'); return; }
-  const r = await api('/api/chains/' + state.chain.id + '/employees', {
-    method: 'POST', body: JSON.stringify({ names, adminPassword: state.adminPwd }),
-  });
-  if (r.code === 0) { el('emp-import').value = ''; toast('已导入 ' + r.data.count + ' 人'); await reloadDetail(); renderEmployees(); }
-  else toast(r.message || '导入失败');
+  if (!names.length) { setMsg('emp-msg', '请粘贴姓名（每行一个）', true); return; }
+  setMsg('emp-msg', '导入中…', false);
+  try {
+    const r = await api('/api/chains/' + state.chain.id + '/employees', {
+      method: 'POST', body: JSON.stringify({ names, adminPassword: state.adminPwd }),
+    });
+    if (r.code === 0) {
+      el('emp-import').value = '';
+      await reloadDetail(); renderEmployees();
+      setMsg('emp-msg', '✅ 本次新增 ' + r.data.count + ' 人，当前名单共 ' + state.employees.length + ' 人', false);
+      toast('已导入 ' + r.data.count + ' 人');
+    } else { setMsg('emp-msg', '❌ ' + (r.message || '导入失败'), true); }
+  } catch (e) { setMsg('emp-msg', '❌ 导入失败：' + e.message, true); }
 };
 function renderEmployees() {
   const box = el('emp-list'); box.innerHTML = '';
@@ -349,24 +384,45 @@ el('rec-date').onchange = (e) => { state.recDate = e.target.value; renderRecords
 
 // 设置
 el('btn-toggle-status').onclick = async () => {
+  if (!needChain()) return;
   const next = state.chain.status === 'open' ? 'closed' : 'open';
-  await api(`/api/chains/${state.chain.id}/status`, { method: 'PATCH', body: JSON.stringify({ status: next, adminPassword: state.adminPwd }) });
-  await reloadDetail(); refreshAdmin(); toast('已切换为' + (next === 'open' ? '进行中' : '已关闭'));
+  try {
+    const r = await api(`/api/chains/${state.chain.id}/status`, { method: 'PATCH', body: JSON.stringify({ status: next, adminPassword: state.adminPwd }) });
+    if (r.code !== 0) { toast(r.message || '切换失败'); return; }
+    await reloadDetail(); refreshAdmin();
+    toast(next === 'open' ? '已重新开启，员工可填报' : '已关闭，员工暂停填报');
+  } catch (e) { toast('切换失败：' + e.message); }
 };
 el('btn-export').onclick = () => {
+  if (!needChain()) return;
   const url = `/api/chains/${state.chain.id}/export?adminPassword=${encodeURIComponent(state.adminPwd)}`;
   window.open(url, '_blank');
   toast('CSV 已开始下载（创建日→今天）');
 };
 el('btn-delete-chain').onclick = async () => {
-  if (!confirm('确认删除整个接龙（含所有记录）？此操作不可恢复。')) return;
-  // 删除走管理员：复用 status 接口不合适，这里用简单提示（如需可加 DELETE 接口）
-  toast('删除请到 Supabase 或联系开发者；当前已隐藏删除按钮以防误删');
+  if (!needChain()) return;
+  if (!confirm('确认删除整个接龙「' + state.chain.title + '」（含所有记录）？此操作不可恢复。')) return;
+  try {
+    const r = await api('/api/chains/' + state.chain.id, { method: 'DELETE', body: JSON.stringify({ adminPassword: state.adminPwd }) });
+    if (r.code === 0) { toast('接龙已删除'); el('admin-modal').hidden = true; await loadHome(); }
+    else toast(r.message || '删除失败');
+  } catch (e) { toast('删除失败：' + e.message); }
 };
 
 function refreshAdmin() {
+  const noChain = !state.chain;
+  el('admin-nochain').hidden = !noChain;
+  el('admin-body').querySelector('.tabs').style.display = noChain ? 'none' : '';
+  document.querySelectorAll('.tab-pane').forEach(p => { p.style.display = noChain ? 'none' : ''; });
+  if (noChain) return;
   renderFields(); renderEmployees(); renderRecords();
   el('rec-date').value = state.recDate;
+  // 开关按钮文字随当前状态变化，并显示状态说明
+  const closed = state.chain.status === 'closed';
+  el('btn-toggle-status').textContent = closed ? '重新开启接龙' : '关闭接龙（暂停填报）';
+  el('status-hint').textContent = closed
+    ? '当前状态：已关闭 —— 员工无法提交（已提交数据保留）。'
+    : '当前状态：进行中 —— 员工可正常填报。';
 }
 
 // ---------- 启动 ----------

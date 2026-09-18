@@ -56,6 +56,14 @@ async function setChainStatus(id, status) {
   return { id: data.id, status: data.status };
 }
 
+// 删除整个接龙（级联删除其字段/员工/记录）
+async function deleteChain(id) {
+  await assertSupabase();
+  const { error } = await supabase.from('chains').delete().eq('id', id);
+  if (error) throw error;
+  return true;
+}
+
 // ---------- 字段（可增删改） ----------
 async function listFields(chainId, includeInactive = false) {
   await assertSupabase();
@@ -191,7 +199,7 @@ async function exportEntries(chainId, from) {
 
 module.exports = {
   todayCN, nowCN,
-  listChains, createChain, getChain, setChainStatus,
+  listChains, createChain, getChain, setChainStatus, deleteChain,
   listFields, addField, updateField, deleteField,
   listEmployees, addEmployees, updateEmployee, deleteEmployee,
   listEntries, upsertEntry, updateEntry, deleteEntry,

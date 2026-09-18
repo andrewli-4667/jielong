@@ -70,6 +70,15 @@ router.patch('/:id/status', async (req, res) => {
   } catch (e) { res.json({ code: 1, message: e.message }); }
 });
 
+// 删除整个接龙（管理，级联删除字段/员工/记录）
+router.delete('/:id', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    await repo.deleteChain(req.params.id);
+    res.json({ code: 0, data: { ok: true } });
+  } catch (e) { res.json({ code: 1, message: e.message }); }
+});
+
 // ---------- 字段（可增删改） ----------
 router.get('/:id/fields', async (req, res) => {
   try { res.json({ code: 0, data: await repo.listFields(req.params.id) }); }

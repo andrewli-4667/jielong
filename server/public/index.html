@@ -85,6 +85,10 @@
       </div>
 
       <div id="admin-body" hidden>
+        <div id="admin-nochain" class="muted small" hidden>
+          当前没有打开任何接龙。字段 / 名单 / 记录 / 设置都针对某个具体接龙，
+          请先点「关闭」，从列表里点进一个接龙，或点右上角「＋ 创建接龙」。
+        </div>
         <div class="tabs">
           <button class="tab active" data-tab="tab-fields">字段</button>
           <button class="tab" data-tab="tab-employees">员工名单</button>
@@ -99,6 +103,7 @@
             <select id="field-type"><option value="number">数字</option><option value="text">文本</option></select>
             <button id="field-add" class="primary small">添加字段</button>
           </div>
+          <div id="field-msg" class="msg"></div>
           <div id="field-list" class="mini-list"></div>
         </div>
 
@@ -107,6 +112,7 @@
           <p class="muted small">每行一个名字，可批量粘贴导入（已存在自动去重）。</p>
           <textarea id="emp-import" class="full" rows="5" placeholder="张三&#10;李四&#10;王五"></textarea>
           <button id="emp-import-btn" class="primary small">导入名单</button>
+          <div id="emp-msg" class="msg"></div>
           <div id="emp-list" class="mini-list"></div>
         </div>
 
@@ -123,10 +129,12 @@
 
         <!-- 设置 -->
         <div id="tab-misc" class="tab-pane" hidden>
+          <p class="muted small">「关闭接龙」后员工将无法再提交（已提交的数据不受影响）；需要时再「重新开启」。</p>
           <div class="row gap">
-            <button id="btn-toggle-status" class="primary small">切换接龙开关</button>
+            <button id="btn-toggle-status" class="primary small">关闭接龙（暂停填报）</button>
             <button id="btn-export" class="primary small">导出 CSV（创建日→今天）</button>
           </div>
+          <div id="status-hint" class="muted small"></div>
           <p class="muted small" id="export-note">CSV 为明细行：日期,姓名,各字段,接龙时间。</p>
           <button id="btn-delete-chain" class="danger small">删除此接龙</button>
         </div>

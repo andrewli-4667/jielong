@@ -11,6 +11,8 @@
   --warn: #f0a020;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* 关键：让 hidden 属性永远生效（否则被上面的 display:flex 等规则盖过，弹层关不掉） */
+[hidden] { display: none !important; }
 body {
   margin: 0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   background: var(--bg); color: var(--text); font-size: 15px;
@@ -113,3 +115,7 @@ th.name { background: #f7f9fc; }
   font-size: 14px; z-index: 99; box-shadow: 0 6px 20px rgba(0,0,0,.25);
 }
 .val-input { width: 84px; text-align: center; }
+.msg { min-height: 18px; font-size: 13px; }
+.msg.ok { color: var(--ok); }
+.msg.err { color: var(--danger); }
+.toast { max-width: 92vw; text-align: center; }

@@ -5,12 +5,13 @@ const config = require('./config');
 const chainsRouter = require('./routes/chains');
 
 const app = express();
+app.set('trust proxy', true); // Render 等在代理后终止 TLS，透传 x-forwarded-proto 以生成正确 https 分享链接
 app.use(express.json());
 
 // CORS（演示开放，部署时改 config.corsOrigin 为具体域名）
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', config.corsOrigin);
-  res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
@@ -34,7 +35,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // 源码下载（部署到 GitHub / Render 用）
 app.get('/download', (req, res) => {
-  res.download(path.join(__dirname, '..', 'jielong-deploy.zip'));
+  res.download(path.join(__dirname, '..', 'jielong-deploy-v2.zip'));
 });
 
 // 兜底错误处理
