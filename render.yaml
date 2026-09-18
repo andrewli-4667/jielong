@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: jielong
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: PORT
+        sync: false
+      - key: CORS_ORIGIN
+        value: "*"

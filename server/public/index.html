@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>群接龙 · 演示</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">群接龙 <span class="badge">演示</span></div>
+    <nav>
+      <button id="nav-list" class="nav active">接龙列表</button>
+      <button id="nav-create" class="nav">+ 创建</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="sec-list" class="section active">
+      <input id="search" class="search" placeholder="搜索接龙标题" />
+      <div id="list"></div>
+    </section>
+
+    <section id="sec-create" class="section">
+      <div class="card">
+        <label>标题 *</label>
+        <input id="c-title" class="input" placeholder="例如：周末聚餐报名" />
+        <label>说明</label>
+        <textarea id="c-desc" class="input" placeholder="补充说明（选填）"></textarea>
+        <label>可选项</label>
+        <div id="c-options"></div>
+        <button class="ghost" id="c-add-opt">+ 添加选项</button>
+        <label>自定义字段（选填）</label>
+        <div id="c-fields"></div>
+        <button class="ghost" id="c-add-field">+ 添加字段</button>
+        <label>截止时间（选填）</label>
+        <input id="c-deadline" class="input" type="datetime-local" />
+        <button class="primary" id="c-submit">创建接龙</button>
+      </div>
+    </section>
+
+    <section id="sec-detail" class="section">
+      <div id="detail"></div>
+      <div class="detail-actions">
+        <button class="ghost" id="d-copy">复制链接</button>
+        <button class="ghost" id="d-export">导出 CSV</button>
+        <button class="ghost" id="d-back">返回列表</button>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>
