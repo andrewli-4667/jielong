@@ -53,7 +53,7 @@ router.get('/:id', async (req, res) => {
         chain, fields, employees, entries,
         today,
         submittedToday,
-        createdDate: String(chain.createdAt).slice(0, 10),
+        createdDate: repo.fmtDateCN(chain.createdAt),
       },
     });
   } catch (e) { res.json({ code: 1, message: e.message }); }
@@ -180,7 +180,7 @@ router.get('/:id/export', async (req, res) => {
     const chain = await repo.getChain(req.params.id);
     if (!chain) return res.json({ code: 1, message: '接龙不存在' });
     const fields = await repo.listFields(chain.id);
-    const from = String(chain.createdAt).slice(0, 10);
+    const from = repo.fmtDateCN(chain.createdAt);
     const entries = await repo.exportEntries(chain.id, from);
 
     const headers = ['日期', '姓名', ...fields.map(f => f.label), '接龙时间'];
@@ -190,7 +190,7 @@ router.get('/:id/export', async (req, res) => {
         e.entryDate,
         e.employeeName,
         ...fields.map(f => (vals[f.id] != null ? vals[f.id] : '') ),
-        (e.createdAt || '').replace('T', ' ').slice(0, 19),
+        repo.fmtDateTimeCN(e.createdAt),
       ];
     });
     const csv = [headers, ...rows]

@@ -47,7 +47,7 @@ async function loadHome() {
     const div = document.createElement('div');
     div.className = 'chain-item';
     div.innerHTML = `<div><div class="t">${esc(c.title)}</div>
-      <div class="sub">创建于 ${esc((c.createdAt||'').slice(0,10))} · ${c.status === 'closed' ? '已关闭' : '进行中'}</div></div>
+      <div class="sub">创建于 ${esc(AppCommon.fmtDateCN(c.createdAt))} · ${c.status === 'closed' ? '已关闭' : '进行中'}</div></div>
       <span class="badge ${c.status === 'closed' ? 'closed' : 'ok'}">${c.status === 'closed' ? '已关闭' : '进行中'}</span>`;
     div.onclick = () => { location.href = '/?id=' + c.id; };
     list.appendChild(div);
@@ -183,7 +183,7 @@ function renderBoard() {
         const v = ent.values && ent.values[f.id] != null ? ent.values[f.id] : '';
         html += `<td class="ok-cell">${esc(v)}</td>`;
       });
-      html += `<td>${esc((ent.createdAt||'').replace('T',' ').slice(11,19))}</td>`;
+      html += `<td>${esc(AppCommon.fmtTimeCN(ent.createdAt))}</td>`;
     } else {
       for (let i = 0; i < state.fields.length; i++) html += '<td class="miss">—</td>';
       html += '<td class="miss">未填报</td>';
@@ -362,21 +362,16 @@ async function renderRecords() {
   });
 }
 function editRecord(ent) {
-  const vals = ent.values || {};
-  const line = state.fields.map(f => {
-    const cur = vals[f.id] != null ? vals[f.id] : '';
-    const nv = prompt(`${f.label}${f.required ? '（必填）' : ''}：`, cur);
-    return { f, nv };
-  });
-  if (nv === null) return; // 取消
-  const values = {}; let bad = false;
-  line.forEach(({ f, nv }) => {
-    if (f.required && (nv === null || nv.trim() === '')) { bad = true; return; }
-    values[f.id] = f.type === 'number' ? (nv === '' ? 0 : Number(nv)) : nv;
-  });
-  if (bad) { toast('必填项不能为空'); return; }
-  api(`/api/chains/${state.chain.id}/entries/${ent.id}`, { method: 'PATCH', body: JSON.stringify({ values, adminPassword: state.adminPwd }) })
-    .then(async () => { toast('已修改'); await reloadDetail(); renderRecords(); });
+  // 收集新值（含取消 / 必填校验），见 common.js 的 collectEditValues
+  const res = AppCommon.collectEditValues(state.fields, ent.values || {}, (m, d) => prompt(m, d));
+  if (res.cancel) return; // 用户取消，整条放弃
+  if (res.error) { toast(res.error); return; }
+  api(`/api/chains/${state.chain.id}/entries/${ent.id}`, { method: 'PATCH', body: JSON.stringify({ values: res.values, adminPassword: state.adminPwd }) })
+    .then(r => {
+      if (r.code !== 0) { toast(r.message || '修改失败'); return; }
+      toast('已修改'); reloadDetail().then(() => renderRecords());
+    })
+    .catch(e => toast('修改失败：' + e.message));
 }
 el('rec-prev').onclick = () => { state.recDate = shiftDate(state.recDate, -1); el('rec-date').value = state.recDate; renderRecords(); };
 el('rec-next').onclick = () => { state.recDate = shiftDate(state.recDate, +1); el('rec-date').value = state.recDate; renderRecords(); };

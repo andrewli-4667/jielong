@@ -1,6 +1,7 @@
 // 数据访问层：所有读写都走 Supabase（Postgres）。
 // 表结构见 sql/schema.sql。本文件只负责 SQL 调用，不含业务逻辑。
 const { supabase } = require('./db');
+const { fmtDateCN, fmtDateTimeCN } = require('./timeutil');
 
 // 中国时区（Asia/Shanghai）今天的日期字符串 YYYY-MM-DD
 function todayCN() {
@@ -11,8 +12,8 @@ function todayCN() {
 }
 
 function nowCN() {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }))
-    .toISOString();
+  // 数据库 timestamptz 存 UTC，直接写当前 UTC 时刻即可；展示层统一转北京时间
+  return new Date().toISOString();
 }
 
 async function assertSupabase() {
@@ -198,7 +199,7 @@ async function exportEntries(chainId, from) {
 }
 
 module.exports = {
-  todayCN, nowCN,
+  todayCN, nowCN, fmtDateCN, fmtDateTimeCN,
   listChains, createChain, getChain, setChainStatus, deleteChain,
   listFields, addField, updateField, deleteField,
   listEmployees, addEmployees, updateEmployee, deleteEmployee,
