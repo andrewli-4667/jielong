@@ -57,6 +57,16 @@ async function setChainStatus(id, status) {
   return { id: data.id, status: data.status };
 }
 
+// 改接龙标题（管理）
+async function updateChain(id, { title }) {
+  await assertSupabase();
+  const { data, error } = await supabase
+    .from('chains').update({ title }).eq('id', id)
+    .select('id,title,status,created_at').single();
+  if (error) throw error;
+  return { id: data.id, title: data.title, status: data.status, createdAt: data.created_at };
+}
+
 // 删除整个接龙（级联删除其字段/员工/记录）
 async function deleteChain(id) {
   await assertSupabase();
@@ -200,7 +210,7 @@ async function exportEntries(chainId, from) {
 
 module.exports = {
   todayCN, nowCN, fmtDateCN, fmtDateTimeCN,
-  listChains, createChain, getChain, setChainStatus, deleteChain,
+  listChains, createChain, getChain, setChainStatus, updateChain, deleteChain,
   listFields, addField, updateField, deleteField,
   listEmployees, addEmployees, updateEmployee, deleteEmployee,
   listEntries, upsertEntry, updateEntry, deleteEntry,

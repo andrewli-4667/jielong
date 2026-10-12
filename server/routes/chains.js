@@ -70,6 +70,17 @@ router.patch('/:id/status', async (req, res) => {
   } catch (e) { res.json({ code: 1, message: e.message }); }
 });
 
+// 改接龙标题（管理）
+router.patch('/:id', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { title } = req.body || {};
+  if (!title || !String(title).trim()) return res.json({ code: 1, message: '标题不能为空' });
+  try {
+    const r = await repo.updateChain(req.params.id, { title: String(title).trim() });
+    res.json({ code: 0, data: r });
+  } catch (e) { res.json({ code: 1, message: e.message }); }
+});
+
 // 删除整个接龙（管理，级联删除字段/员工/记录）
 router.delete('/:id', async (req, res) => {
   if (!requireAdmin(req, res)) return;

@@ -95,6 +95,34 @@ async function loadDetail(id) {
   el('rec-date').value = d.today;
 }
 
+// 改接龙标题（管理）：未登录管理口令时先提示输入，最多重试 2 次
+async function renameChain() {
+  if (!state.chain) return;
+  const nt = prompt('修改接龙标题：', state.chain.title || '');
+  if (nt === null) return; // 取消
+  const t = String(nt).trim();
+  if (!t) { toast('标题不能为空'); return; }
+  let pwd = state.adminPwd;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (!pwd) { pwd = prompt('请输入管理员口令：'); if (!pwd) return; }
+    try {
+      const r = await api('/api/chains/' + state.chain.id, {
+        method: 'PATCH',
+        body: JSON.stringify({ title: t, adminPassword: pwd }),
+      });
+      if (r.code === 0) {
+        state.adminPwd = pwd; sessionStorage.setItem('adminPwd', pwd);
+        state.chain.title = t; el('detail-title').textContent = t;
+        toast('✅ 已改名');
+        return;
+      }
+      if (r.code === 401) { pwd = null; toast('口令错误，请重试'); continue; }
+      toast('❌ ' + (r.message || '改名失败')); return;
+    } catch (e) { toast('❌ 改名失败：' + e.message); return; }
+  }
+}
+el('btn-rename-chain').onclick = renameChain;
+
 function renderEmployeeSelect() {
   const sel = el('employee-select'); sel.innerHTML = '<option value="">— 请选择 —</option>';
   state.employees.forEach(e => {
