@@ -125,3 +125,8 @@ th.name { background: #f7f9fc; }
 #import-file-info { font-size: 12px; min-height: 16px; margin: 4px 0; color: var(--muted); }
 #import-file-info.ok { color: var(--ok); }
 #import-file-info.err { color: var(--danger); }
+
+/* 员工名单：在职/离职状态标签与置灰 */
+.mini-item.off input { opacity: .55; }
+.tag { font-size: 11px; padding: 1px 7px; border-radius: 8px; background: #eef2f7; color: #5b6b7b; margin-right: 6px; flex: none; white-space: nowrap; }
+.tag.off { background: #fdecea; color: #c0392b; }

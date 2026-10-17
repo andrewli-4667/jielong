@@ -41,7 +41,8 @@ router.get('/:id', async (req, res) => {
     if (!chain) return res.json({ code: 1, message: '接龙不存在' });
     const [fields, employees, entries] = await Promise.all([
       repo.listFields(chain.id),
-      repo.listEmployees(chain.id),
+      // 含停用员工：管理面板「员工名单」需看到离职者可一键恢复；填报下拉与看板在前端按 isActive 自行过滤
+      repo.listEmployees(chain.id, true),
       repo.listEntries(chain.id),
     ]);
     const today = repo.todayCN();

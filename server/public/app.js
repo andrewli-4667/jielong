@@ -137,6 +137,8 @@ function renderEmployeeSelect() {
     renderForm();
   };
   sel.value = state.selectedEmployeeId;
+  const hint = el('employee-hint');
+  if (hint) hint.textContent = '名单由管理员维护；下拉里没有你的名字，请联系管理员添加或恢复在职。';
 }
 
 // 员工今日已提交记录
@@ -349,21 +351,38 @@ el('emp-import-btn').onclick = async () => {
 function renderEmployees() {
   const box = el('emp-list'); box.innerHTML = '';
   state.employees.forEach(e => {
-    const item = document.createElement('div'); item.className = 'mini-item';
-    const inp = document.createElement('input'); inp.value = e.name; inp.disabled = e.isActive === false;
+    const inactive = e.isActive === false;
+    const item = document.createElement('div'); item.className = 'mini-item' + (inactive ? ' off' : '');
+    const tag = document.createElement('span'); tag.className = 'tag' + (inactive ? ' off' : '');
+    tag.textContent = inactive ? '已离职' : '在职';
+    const inp = document.createElement('input'); inp.value = e.name; inp.disabled = inactive;
     const btnRename = document.createElement('button'); btnRename.className = 'nav ghost small'; btnRename.textContent = '改名';
+    btnRename.disabled = inactive;
     btnRename.onclick = async () => {
       const nn = inp.value.trim(); if (!nn) return;
       await api(`/api/chains/${state.chain.id}/employees/${e.id}`, { method: 'PATCH', body: JSON.stringify({ name: nn, adminPassword: state.adminPwd }) });
       await reloadDetail(); renderEmployees();
     };
+    // 在职 / 离职切换：离职后不再出现在员工填报下拉与看板，但历史记录保留
+    const btnToggle = document.createElement('button'); btnToggle.className = 'nav ghost small';
+    btnToggle.textContent = inactive ? '恢复在职' : '设为离职';
+    btnToggle.onclick = async () => {
+      const next = !inactive;
+      const r = await api(`/api/chains/${state.chain.id}/employees/${e.id}`, {
+        method: 'PATCH', body: JSON.stringify({ isActive: next, adminPassword: state.adminPwd }),
+      });
+      if (r.code === 0) {
+        await reloadDetail(); renderEmployees();
+        toast(next ? `已将「${e.name}」恢复为在职` : `已将「${e.name}」标记为离职（不再出现在填报下拉与看板）`);
+      } else toast(r.message || '操作失败');
+    };
     const btnDel = document.createElement('button'); btnDel.className = 'x'; btnDel.textContent = '✕';
     btnDel.onclick = async () => {
-      if (!confirm('移除「' + e.name + '」？其已提交记录仍保留。')) return;
+      if (!confirm('移除「' + e.name + '」？其已提交记录仍保留。\n（若只是离职，建议用「设为离职」而非删除，便于日后恢复）')) return;
       await api(`/api/chains/${state.chain.id}/employees/${e.id}`, { method: 'DELETE', body: JSON.stringify({ adminPassword: state.adminPwd }) });
       await reloadDetail(); renderEmployees();
     };
-    item.appendChild(inp); item.appendChild(btnRename); item.appendChild(btnDel); box.appendChild(item);
+    item.appendChild(tag); item.appendChild(inp); item.appendChild(btnRename); item.appendChild(btnToggle); item.appendChild(btnDel); box.appendChild(item);
   });
 }
 
