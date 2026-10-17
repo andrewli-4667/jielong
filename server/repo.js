@@ -101,8 +101,18 @@ async function addField(chainId, { label, type = 'number', required = true, opti
 
 async function updateField(chainId, fieldId, patch) {
   await assertSupabase();
+  // 白名单：请求体里有 adminPassword 等非列字段，直接透传会被 Supabase 当成列名报错
+  const p = patch || {};
+  const row = {};
+  if (p.label != null) row.label = String(p.label).trim();
+  if (p.type != null) row.type = p.type;
+  if (p.required != null) row.required = !!p.required;
+  if (p.options !== undefined) row.options = p.options;
+  if (p.isActive != null || p.is_active != null) row.is_active = p.isActive != null ? !!p.isActive : !!p.is_active;
+  if (p.sortOrder != null || p.sort_order != null) row.sort_order = Number(p.sortOrder != null ? p.sortOrder : p.sort_order);
+  if (!Object.keys(row).length) throw new Error('没有可更新的字段');
   const { data, error } = await supabase.from('fields')
-    .update(patch).eq('id', fieldId).eq('chain_id', chainId).select('*').single();
+    .update(row).eq('id', fieldId).eq('chain_id', chainId).select('*').single();
   if (error) throw error;
   return data;
 }
@@ -136,8 +146,19 @@ async function addEmployees(chainId, names) {
 
 async function updateEmployee(chainId, empId, patch) {
   await assertSupabase();
+  // 白名单：只允许改姓名 / 在职状态 / 排序；adminPassword 等请求字段一律丢弃
+  const p = patch || {};
+  const row = {};
+  if (p.name != null) {
+    const nm = String(p.name).trim();
+    if (!nm) throw new Error('姓名不能为空');
+    row.name = nm;
+  }
+  if (p.isActive != null || p.is_active != null) row.is_active = p.isActive != null ? !!p.isActive : !!p.is_active;
+  if (p.sortOrder != null || p.sort_order != null) row.sort_order = Number(p.sortOrder != null ? p.sortOrder : p.sort_order);
+  if (!Object.keys(row).length) throw new Error('没有可更新的字段');
   const { data, error } = await supabase.from('employees')
-    .update(patch).eq('id', empId).eq('chain_id', chainId).select('*').single();
+    .update(row).eq('id', empId).eq('chain_id', chainId).select('*').single();
   if (error) throw error;
   return data;
 }
