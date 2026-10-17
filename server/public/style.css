@@ -119,3 +119,9 @@ th.name { background: #f7f9fc; }
 .msg.ok { color: var(--ok); }
 .msg.err { color: var(--danger); }
 .toast { max-width: 92vw; text-align: center; }
+/* 复选框行（CSV 导入选项等） */
+.check { display: flex; align-items: center; gap: 6px; margin: 6px 0; cursor: pointer; color: var(--muted); }
+.check input { margin: 0; cursor: pointer; }
+#import-file-info { font-size: 12px; min-height: 16px; margin: 4px 0; color: var(--muted); }
+#import-file-info.ok { color: var(--ok); }
+#import-file-info.err { color: var(--danger); }

@@ -64,7 +64,35 @@
     return { values };
   }
 
-  const api = { fmtDateCN, fmtTimeCN, fmtDateTimeCN, collectEditValues };
+  // 解码 CSV 文件到文本，自动识别编码。
+  //   为什么需要：Excel 中文版「另存为 CSV」默认是 GBK/GB18030 编码，
+  //   直接按 UTF-8 读会整篇乱码（表头变问号），导致导入时匹配不到「日期」「姓名」。
+  // 返回 { text, encoding }
+  function decodeCsvBuffer(buffer) {
+    const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+    if (!bytes.length) return { text: '', encoding: '空文件' };
+    // 1) BOM 明确标识
+    if (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+      return { text: new TextDecoder('utf-8').decode(bytes.subarray(3)), encoding: 'UTF-8 (含BOM)' };
+    }
+    if (bytes[0] === 0xFF && bytes[1] === 0xFE) {
+      return { text: new TextDecoder('utf-16le').decode(bytes.subarray(2)), encoding: 'UTF-16 LE' };
+    }
+    if (bytes[0] === 0xFE && bytes[1] === 0xFF) {
+      return { text: new TextDecoder('utf-16be').decode(bytes.subarray(2)), encoding: 'UTF-16 BE' };
+    }
+    // 2) 严格 UTF-8：合法就是 UTF-8（中文 CSV 用 UTF-8 时不会误判）
+    try {
+      return { text: new TextDecoder('utf-8', { fatal: true }).decode(bytes), encoding: 'UTF-8' };
+    } catch (e) { /* 不是合法 UTF-8，继续 */ }
+    // 3) 回退 GB18030（兼容 GBK / GB2312，Excel 中文默认）
+    try {
+      return { text: new TextDecoder('gb18030').decode(bytes), encoding: 'GBK/GB18030' };
+    } catch (e) { /* 环境不支持 gb18030 */ }
+    return { text: new TextDecoder('utf-8').decode(bytes), encoding: 'UTF-8（有损）' };
+  }
+
+  const api = { fmtDateCN, fmtTimeCN, fmtDateTimeCN, collectEditValues, decodeCsvBuffer };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.AppCommon = api;
 })(typeof window !== 'undefined' ? window : globalThis);

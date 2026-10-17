@@ -129,10 +129,12 @@
           <div class="import-box">
             <button id="btn-show-import" class="primary small">导入 CSV（批量补历史数据）</button>
             <div id="import-panel" class="card" hidden>
-              <p class="muted small">格式：第一行表头必须含「<b>日期</b>」「<b>姓名</b>」，其余列名与接龙字段一致（如 呼出,接通,有效…）。日期用 <b>YYYY-MM-DD</b>。可上传 .csv 文件，或把内容粘贴到下方。</p>
+              <p class="muted small">格式：第一行表头必须含「<b>日期</b>」「<b>姓名</b>」，其余列名与接龙字段一致（如 呼出,接通,有效…）。日期支持 <b>2026-09-01</b> / <b>2026/9/1</b> / <b>20260901</b>。编码自动识别（Excel 另存的 GBK 也能读）。可上传 .csv 文件，或把内容粘贴到下方。</p>
               <div class="row gap">
                 <input type="file" id="import-file" accept=".csv,.txt" class="flex1" />
               </div>
+              <div id="import-file-info" class="muted small"></div>
+              <label class="check small"><input type="checkbox" id="import-autofield" checked /> 表头里有接龙没定义的列（如「装机」）自动新建为字段</label>
               <textarea id="import-text" class="full" rows="5" placeholder="日期,姓名,呼出,接通,有效,微信,意向,成交,激活,私人微信&#10;2026-09-01,张三,10,8,5,3,2,1,0,1"></textarea>
               <div class="row gap">
                 <button id="btn-import" class="primary small">开始导入</button>

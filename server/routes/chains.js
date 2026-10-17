@@ -184,46 +184,94 @@ router.delete('/:id/entries/:eid', async (req, res) => {
   catch (e) { res.json({ code: 1, message: e.message }); }
 });
 
-// ---------- CSV 解析（支持逗号/制表符/分号分隔、双引号包裹、去 BOM） ----------
-const { parseCSV, matchImportColumns } = require('../csvutil');
+// ---------- CSV 导入（解析/日期/列匹配在 csvutil 里，纯函数可单测） ----------
+const { parseCSV, planImport, normHeader } = require('../csvutil');
 
 // 批量导入历史记录（管理，CSV 文本）
-// 表头：必须含「日期」「姓名」；其余列按字段标签（忽略大小写/空白）匹配到当前接龙的字段
+// 表头：必须含「日期」「姓名」（支持别名）；日期支持 2026/5/29、2026-05-29、20260529
+// 其余列按字段标签匹配；未匹配列可自动新建为字段；CSV 中新出现的人自动加入名单
 router.post('/:id/entries/import', async (req, res) => {
   if (!requireAdmin(req, res)) return;
-  const { csv } = req.body || {};
+  const { csv, autoCreateFields } = req.body || {};
   if (!csv || typeof csv !== 'string' || !csv.trim()) return res.json({ code: 1, message: '未收到 CSV 内容' });
   try {
-    const fields = await repo.listFields(req.params.id);
+    const chainId = req.params.id;
+    let fields = await repo.listFields(chainId, true); // 含已停用，避免重复建同名字段
+    const employees = await repo.listEmployees(chainId, true);
+    // 名单里已停用的人：数据能导入，但看板不显示，需要提示用户
+    const inactiveNames = employees.filter(e => !e.isActive).map(e => e.name);
+
     const rows = parseCSV(csv);
-    if (rows.length < 2) return res.json({ code: 1, message: 'CSV 至少要有表头行和一条数据' });
-    const header = rows[0].map(h => h.trim());
-    const plan = matchImportColumns(header, fields);
-    if (plan.error) return res.json({ code: 1, message: plan.error });
-    const { dateIdx, nameIdx, colMap } = plan;
-    const warnings = plan.warnings;
-    const dateRe = /^\d{4}-\d{2}-\d{2}$/;
-    let ok = 0; const errors = [];
-    for (let r = 1; r < rows.length; r++) {
-      const cells = rows[r];
-      const date = (cells[dateIdx] || '').trim();
-      const name = (cells[nameIdx] || '').trim();
-      if (!dateRe.test(date)) { errors.push(`第${r + 1}行：日期「${date}」格式应为 YYYY-MM-DD`); continue; }
-      if (!name) { errors.push(`第${r + 1}行：缺少姓名`); continue; }
-      const values = {};
-      for (const { idx, field } of colMap) {
-        const v = (cells[idx] || '').trim();
-        if (field.type === 'number') {
-          const n = Number(v);
-          values[field.id] = v === '' ? 0 : (isNaN(n) ? 0 : n);
-        } else values[field.id] = v;
-      }
+    const plan = planImport(rows, fields, {
+      employees: employees.map(e => e.name),
+      autoCreateFields: autoCreateFields !== false,
+    });
+    if (plan.error) return res.json({ code: 1, message: plan.error, data: { warnings: plan.warnings } });
+
+    // 1) 未匹配的列 -> 自动新建为字段（数字型、非必填，不影响员工日常填报）
+    const createdFields = [];
+    const failCreate = [];
+    for (const label of plan.newFieldLabels) {
       try {
-        await repo.upsertEntry(req.params.id, { employeeName: name, entryDate: date, values });
-        ok++;
-      } catch (e) { errors.push(`第${r + 1}行（${name} ${date}）写入失败：${e.message}`); }
+        const f = await repo.addField(chainId, { label, type: 'number', required: false });
+        createdFields.push(f);
+      } catch (e) { failCreate.push(`新建字段「${label}」失败：${e.message}`); }
     }
-    res.json({ code: 0, data: { success: ok, errors, warnings } });
+
+    // 2) 字段标签 -> id 映射（已有字段 + 新建字段）
+    const labelToId = {};
+    fields.forEach(f => { labelToId[normHeader(f.label)] = f.id; });
+    createdFields.forEach(f => { labelToId[normHeader(f.label)] = f.id; });
+
+    // 3) 组装写入行（按字段 id 组织 values）
+    const payload = [];
+    for (const ln of plan.lines) {
+      const values = {};
+      for (const key of Object.keys(ln.cells)) {
+        const id = labelToId[key];
+        if (id) values[id] = ln.cells[key];
+      }
+      payload.push({ employeeName: ln.name, entryDate: ln.date, values });
+    }
+
+    // 4) 批量写入（分批，避免 800+ 次请求超时）
+    let success = 0;
+    let writeError = null;
+    try { success = await repo.bulkUpsertEntries(chainId, payload); }
+    catch (e) { writeError = e.message; }
+
+    // 5) CSV 里出现但名单中没有的人 -> 自动加入名单（否则看板看不到他们的数据）
+    let employeesAdded = [];
+    if (!writeError && plan.employeesToAdd.length) {
+      try {
+        const added = await repo.addEmployees(chainId, plan.employeesToAdd);
+        employeesAdded = added.map(a => a.name);
+      } catch (e) { /* 名单唯一键冲突等不影响数据写入 */ }
+    }
+
+    const errors = plan.errors.concat(failCreate);
+    if (writeError) errors.push('写入数据库失败：' + writeError);
+    const warnings = plan.warnings.slice();
+    if (inactiveNames.length) {
+      const hit = [];
+      plan.lines.forEach(l => { if (inactiveNames.indexOf(l.name) >= 0 && hit.indexOf(l.name) < 0) hit.push(l.name); });
+      if (hit.length) warnings.push(`这些人在名单中已停用（数据已导入但看板不显示，可到「员工」页恢复）：${hit.join('、')}`);
+    }
+    if (plan.errors.length) warnings.push(`有 ${plan.errors.length} 行未导入，详见下方明细`);
+    const ds = plan.lines.map(l => l.date).sort();
+    res.json({
+      code: 0,
+      data: {
+        success,
+        total: plan.lines.length,
+        errors,
+        warnings,
+        createdFields: createdFields.map(f => f.label),
+        employeesAdded,
+        minDate: ds.length ? ds[0] : null,
+        maxDate: ds.length ? ds[ds.length - 1] : null,
+      },
+    });
   } catch (e) { res.json({ code: 1, message: e.message }); }
 });
 
@@ -234,7 +282,12 @@ router.get('/:id/export', async (req, res) => {
     const chain = await repo.getChain(req.params.id);
     if (!chain) return res.json({ code: 1, message: '接龙不存在' });
     const fields = await repo.listFields(chain.id);
-    const from = repo.fmtDateCN(chain.createdAt);
+    // 导出范围：接龙创建日 → 今天；若导入过更早的历史数据，则从最早记录日起
+    let from = repo.fmtDateCN(chain.createdAt);
+    try {
+      const minDate = await repo.minEntryDate(chain.id);
+      if (minDate && minDate < from) from = minDate;
+    } catch (e) { /* 取不到就用创建日 */ }
     const entries = await repo.exportEntries(chain.id, from);
 
     const headers = ['日期', '姓名', ...fields.map(f => f.label), '接龙时间'];

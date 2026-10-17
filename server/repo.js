@@ -179,6 +179,29 @@ async function upsertEntry(chainId, { employeeId, employeeName, entryDate, value
   };
 }
 
+// 批量写入（导入历史数据用）：分批数组 upsert，去重键 chain_id+employee_name+entry_date
+// 逐条写 800+ 行会触发 800+ 次请求必然超时，这里按 200 条/批合并
+async function bulkUpsertEntries(chainId, list, chunkSize = 200) {
+  await assertSupabase();
+  if (!list || !list.length) return 0;
+  const chunk = Math.max(1, Math.min(500, chunkSize || 200));
+  let done = 0;
+  for (let i = 0; i < list.length; i += chunk) {
+    const rows = list.slice(i, i + chunk).map(r => ({
+      chain_id: chainId,
+      employee_id: r.employeeId || null,
+      employee_name: r.employeeName,
+      entry_date: r.entryDate,
+      values: r.values || {},
+    }));
+    const { error } = await supabase.from('entries')
+      .upsert(rows, { onConflict: 'chain_id,employee_name,entry_date' });
+    if (error) throw error;
+    done += rows.length;
+  }
+  return done;
+}
+
 async function updateEntry(chainId, entryId, values) {
   await assertSupabase();
   const { data, error } = await supabase.from('entries')
@@ -196,6 +219,16 @@ async function deleteEntry(chainId, entryId) {
 }
 
 // 导出用：日期范围 [from, to]，明细行
+// 该接龙最早一条记录的日期（用于导出范围：导入的历史数据可能早于接龙创建日）
+async function minEntryDate(chainId) {
+  await assertSupabase();
+  const { data, error } = await supabase.from('entries')
+    .select('entry_date').eq('chain_id', chainId)
+    .order('entry_date', { ascending: true }).limit(1);
+  if (error) throw error;
+  return data && data[0] ? data[0].entry_date : null;
+}
+
 async function exportEntries(chainId, from) {
   await assertSupabase();
   let q = supabase.from('entries').select('*').eq('chain_id', chainId);
@@ -213,6 +246,6 @@ module.exports = {
   listChains, createChain, getChain, setChainStatus, updateChain, deleteChain,
   listFields, addField, updateField, deleteField,
   listEmployees, addEmployees, updateEmployee, deleteEmployee,
-  listEntries, upsertEntry, updateEntry, deleteEntry,
-  exportEntries,
+  listEntries, upsertEntry, bulkUpsertEntries, updateEntry, deleteEntry,
+  minEntryDate, exportEntries,
 };

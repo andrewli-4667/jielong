@@ -410,27 +410,62 @@ el('btn-show-import').onclick = () => { el('import-panel').hidden = !el('import-
 el('import-cancel').onclick = () => { el('import-panel').hidden = true; };
 el('import-file').onchange = async (e) => {
   const file = e.target.files && e.target.files[0];
+  const info = el('import-file-info');
   if (!file) return;
-  try { el('import-text').value = await file.text(); toast('已读取文件，点「开始导入」'); }
-  catch (err) { toast('读取文件失败：' + err.message); }
+  try {
+    // 必须按二进制读再自行解码：Excel 中文版另存 CSV 默认 GBK，
+    // 直接 file.text() 会按 UTF-8 解析成乱码，表头匹配必然失败
+    const buf = await file.arrayBuffer();
+    const { text, encoding } = AppCommon.decodeCsvBuffer(buf);
+    el('import-text').value = text;
+    const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+    const head = (lines[0] || '').slice(0, 80);
+    info.className = 'ok';
+    info.textContent = `已读取：${file.name}（${(file.size / 1024).toFixed(0)} KB，编码 ${encoding}），共 ${Math.max(0, lines.length - 1)} 行数据。表头：${head}`;
+    toast('已读取文件，点「开始导入」');
+  } catch (err) {
+    info.className = 'err';
+    info.textContent = '读取文件失败：' + err.message;
+    toast('读取文件失败：' + err.message);
+  }
 };
 el('btn-import').onclick = async () => {
   if (!needChain()) return;
   const csv = (el('import-text').value || '').trim();
   if (!csv) { toast('请先选择文件或粘贴 CSV 内容'); return; }
-  el('import-msg').textContent = '导入中…';
+  const box = el('import-msg');
+  box.className = 'msg';
+  box.textContent = '导入中…（数据多时请稍候，勿关闭页面）';
   try {
     const r = await api(`/api/chains/${state.chain.id}/entries/import`, {
-      method: 'POST', body: JSON.stringify({ csv, adminPassword: state.adminPwd }),
+      method: 'POST',
+      body: JSON.stringify({
+        csv,
+        adminPassword: state.adminPwd,
+        autoCreateFields: !!(el('import-autofield') && el('import-autofield').checked),
+      }),
     });
-    if (r.code !== 0) { el('import-msg').textContent = '失败：' + (r.message || '未知错误'); return; }
+    if (r.code !== 0) {
+      box.className = 'msg err';
+      box.textContent = '失败：' + (r.message || '未知错误') +
+        (r.data && r.data.warnings && r.data.warnings.length ? '（' + r.data.warnings.join('；') + '）' : '');
+      return;
+    }
     const d = r.data || {};
-    let msg = `✅ 成功导入 ${d.success} 条`;
-    if (d.errors && d.errors.length) msg += `；❌ 失败 ${d.errors.length} 条：${d.errors.slice(0, 5).join('；')}${d.errors.length > 5 ? ' …' : ''}`;
-    if (d.warnings && d.warnings.length) msg += `（提示：${d.warnings.join('；')}）`;
-    el('import-msg').textContent = msg;
-    await reloadDetail(); renderRecords();
-  } catch (e) { el('import-msg').textContent = '导入失败：' + e.message; }
+    const parts = [`✅ 成功导入 ${d.success} 条`];
+    if (d.total && d.total !== d.success) parts.push(`共解析 ${d.total} 条`);
+    if (d.minDate && d.maxDate) parts.push(`日期范围 ${d.minDate} ~ ${d.maxDate}`);
+    if (d.createdFields && d.createdFields.length) parts.push(`新建字段：${d.createdFields.join('、')}`);
+    if (d.employeesAdded && d.employeesAdded.length) parts.push(`新增员工：${d.employeesAdded.join('、')}`);
+    if (d.errors && d.errors.length) parts.push(`❌ 跳过 ${d.errors.length} 条：${d.errors.slice(0, 5).join('；')}${d.errors.length > 5 ? ' …' : ''}`);
+    if (d.warnings && d.warnings.length) parts.push(`提示：${d.warnings.join('；')}`);
+    box.className = 'msg ' + (d.errors && d.errors.length ? 'err' : 'ok');
+    box.textContent = parts.join('；');
+    await reloadDetail();
+    // 导入后停在数据的最新一天，方便立刻确认导入结果
+    if (d.maxDate) { state.recDate = d.maxDate; el('rec-date').value = d.maxDate; }
+    renderRecords();
+  } catch (e) { box.className = 'msg err'; box.textContent = '导入失败：' + e.message; }
 };
 
 // 设置
