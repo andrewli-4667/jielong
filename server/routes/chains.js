@@ -184,6 +184,49 @@ router.delete('/:id/entries/:eid', async (req, res) => {
   catch (e) { res.json({ code: 1, message: e.message }); }
 });
 
+// ---------- CSV 解析（支持逗号/制表符/分号分隔、双引号包裹、去 BOM） ----------
+const { parseCSV, matchImportColumns } = require('../csvutil');
+
+// 批量导入历史记录（管理，CSV 文本）
+// 表头：必须含「日期」「姓名」；其余列按字段标签（忽略大小写/空白）匹配到当前接龙的字段
+router.post('/:id/entries/import', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { csv } = req.body || {};
+  if (!csv || typeof csv !== 'string' || !csv.trim()) return res.json({ code: 1, message: '未收到 CSV 内容' });
+  try {
+    const fields = await repo.listFields(req.params.id);
+    const rows = parseCSV(csv);
+    if (rows.length < 2) return res.json({ code: 1, message: 'CSV 至少要有表头行和一条数据' });
+    const header = rows[0].map(h => h.trim());
+    const plan = matchImportColumns(header, fields);
+    if (plan.error) return res.json({ code: 1, message: plan.error });
+    const { dateIdx, nameIdx, colMap } = plan;
+    const warnings = plan.warnings;
+    const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+    let ok = 0; const errors = [];
+    for (let r = 1; r < rows.length; r++) {
+      const cells = rows[r];
+      const date = (cells[dateIdx] || '').trim();
+      const name = (cells[nameIdx] || '').trim();
+      if (!dateRe.test(date)) { errors.push(`第${r + 1}行：日期「${date}」格式应为 YYYY-MM-DD`); continue; }
+      if (!name) { errors.push(`第${r + 1}行：缺少姓名`); continue; }
+      const values = {};
+      for (const { idx, field } of colMap) {
+        const v = (cells[idx] || '').trim();
+        if (field.type === 'number') {
+          const n = Number(v);
+          values[field.id] = v === '' ? 0 : (isNaN(n) ? 0 : n);
+        } else values[field.id] = v;
+      }
+      try {
+        await repo.upsertEntry(req.params.id, { employeeName: name, entryDate: date, values });
+        ok++;
+      } catch (e) { errors.push(`第${r + 1}行（${name} ${date}）写入失败：${e.message}`); }
+    }
+    res.json({ code: 0, data: { success: ok, errors, warnings } });
+  } catch (e) { res.json({ code: 1, message: e.message }); }
+});
+
 // 导出 CSV（明细行，范围：创建日 → 今天）【需管理员口令】
 router.get('/:id/export', async (req, res) => {
   if (!requireAdmin(req, res)) return;

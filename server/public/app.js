@@ -405,6 +405,34 @@ el('rec-prev').onclick = () => { state.recDate = shiftDate(state.recDate, -1); e
 el('rec-next').onclick = () => { state.recDate = shiftDate(state.recDate, +1); el('rec-date').value = state.recDate; renderRecords(); };
 el('rec-date').onchange = (e) => { state.recDate = e.target.value; renderRecords(); };
 
+// 批量导入 CSV（历史数据补录）
+el('btn-show-import').onclick = () => { el('import-panel').hidden = !el('import-panel').hidden; };
+el('import-cancel').onclick = () => { el('import-panel').hidden = true; };
+el('import-file').onchange = async (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  try { el('import-text').value = await file.text(); toast('已读取文件，点「开始导入」'); }
+  catch (err) { toast('读取文件失败：' + err.message); }
+};
+el('btn-import').onclick = async () => {
+  if (!needChain()) return;
+  const csv = (el('import-text').value || '').trim();
+  if (!csv) { toast('请先选择文件或粘贴 CSV 内容'); return; }
+  el('import-msg').textContent = '导入中…';
+  try {
+    const r = await api(`/api/chains/${state.chain.id}/entries/import`, {
+      method: 'POST', body: JSON.stringify({ csv, adminPassword: state.adminPwd }),
+    });
+    if (r.code !== 0) { el('import-msg').textContent = '失败：' + (r.message || '未知错误'); return; }
+    const d = r.data || {};
+    let msg = `✅ 成功导入 ${d.success} 条`;
+    if (d.errors && d.errors.length) msg += `；❌ 失败 ${d.errors.length} 条：${d.errors.slice(0, 5).join('；')}${d.errors.length > 5 ? ' …' : ''}`;
+    if (d.warnings && d.warnings.length) msg += `（提示：${d.warnings.join('；')}）`;
+    el('import-msg').textContent = msg;
+    await reloadDetail(); renderRecords();
+  } catch (e) { el('import-msg').textContent = '导入失败：' + e.message; }
+};
+
 // 设置
 el('btn-toggle-status').onclick = async () => {
   if (!needChain()) return;

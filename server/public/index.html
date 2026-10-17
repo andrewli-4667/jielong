@@ -126,6 +126,21 @@
             <button id="rec-next" class="nav ghost small">›</button>
           </div>
           <div id="rec-list" class="mini-list"></div>
+          <div class="import-box">
+            <button id="btn-show-import" class="primary small">导入 CSV（批量补历史数据）</button>
+            <div id="import-panel" class="card" hidden>
+              <p class="muted small">格式：第一行表头必须含「<b>日期</b>」「<b>姓名</b>」，其余列名与接龙字段一致（如 呼出,接通,有效…）。日期用 <b>YYYY-MM-DD</b>。可上传 .csv 文件，或把内容粘贴到下方。</p>
+              <div class="row gap">
+                <input type="file" id="import-file" accept=".csv,.txt" class="flex1" />
+              </div>
+              <textarea id="import-text" class="full" rows="5" placeholder="日期,姓名,呼出,接通,有效,微信,意向,成交,激活,私人微信&#10;2026-09-01,张三,10,8,5,3,2,1,0,1"></textarea>
+              <div class="row gap">
+                <button id="btn-import" class="primary small">开始导入</button>
+                <button id="import-cancel" class="nav ghost small">收起</button>
+              </div>
+              <div id="import-msg" class="msg"></div>
+            </div>
+          </div>
         </div>
 
         <!-- 设置 -->
