@@ -174,10 +174,21 @@ async function deleteEmployee(chainId, empId) {
 // 返回某接龙全部记录（前端按日期/员工自行组织）
 async function listEntries(chainId) {
   await assertSupabase();
-  const { data, error } = await supabase
-    .from('entries').select('*').eq('chain_id', chainId).order('entry_date', { ascending: true });
-  if (error) throw error;
-  return (data || []).map(e => ({
+  // Supabase/PostgREST 单次最多返回 1000 行（默认上限），记录数超过后必须分页，
+  // 否则最新记录会被截断，看板/回填就看不到最近提交的接龙数据。
+  const PAGE = 1000;
+  let all = [];
+  for (let start = 0; ; start += PAGE) {
+    const { data, error } = await supabase.from('entries')
+      .select('*').eq('chain_id', chainId)
+      .order('entry_date', { ascending: true })
+      .range(start, start + PAGE - 1);
+    if (error) throw error;
+    if (!data || !data.length) break;
+    all = all.concat(data);
+    if (data.length < PAGE) break;
+  }
+  return all.map(e => ({
     id: e.id, employeeId: e.employee_id, employeeName: e.employee_name,
     entryDate: e.entry_date, values: e.values, createdAt: e.created_at, updatedAt: e.updated_at,
   }));
@@ -252,12 +263,21 @@ async function minEntryDate(chainId) {
 
 async function exportEntries(chainId, from) {
   await assertSupabase();
-  let q = supabase.from('entries').select('*').eq('chain_id', chainId);
-  if (from) q = q.gte('entry_date', from);
-  q = q.order('entry_date', { ascending: true }).order('employee_name', { ascending: true });
-  const { data, error } = await q;
-  if (error) throw error;
-  return (data || []).map(e => ({
+  // 同样分页拉全量，避免 1000 行上限截断导致最新数据导不出
+  const PAGE = 1000;
+  let all = [];
+  for (let start = 0; ; start += PAGE) {
+    let q = supabase.from('entries').select('*').eq('chain_id', chainId);
+    if (from) q = q.gte('entry_date', from);
+    q = q.order('entry_date', { ascending: true }).order('employee_name', { ascending: true })
+      .range(start, start + PAGE - 1);
+    const { data, error } = await q;
+    if (error) throw error;
+    if (!data || !data.length) break;
+    all = all.concat(data);
+    if (data.length < PAGE) break;
+  }
+  return all.map(e => ({
     id: e.id, employeeName: e.employee_name, entryDate: e.entry_date, values: e.values, createdAt: e.created_at,
   }));
 }
